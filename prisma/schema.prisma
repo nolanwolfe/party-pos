@@ -1,0 +1,19 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model Order {
+  id        String   @id @default(cuid())
+  name      String
+  email     String
+  package   String
+  amount    Int
+  source    String
+  stripeId  String   @unique
+  pickedUp  Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
