@@ -310,6 +310,8 @@ export default function PosPage() {
           <p className="text-zinc-500 text-xs">
             Point of Sale · Cannes 2026 ·{" "}
             <a href="/pos/orders" className="hover:text-white transition-colors">Orders</a>
+            {" · "}
+            <a href="/pos/shift" className="hover:text-white transition-colors">Shift</a>
           </p>
         </div>
         <div className={`text-xs px-3 py-1.5 rounded-full font-medium ${

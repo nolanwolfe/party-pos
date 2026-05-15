@@ -29,18 +29,30 @@ model PickupLog {
   createdAt DateTime @default(now())
 }
 
+model PosShift {
+  id          String    @id @default(cuid())
+  openedAt    DateTime  @default(now())
+  closedAt    DateTime?
+  openedBy    String    @default("staff")
+  closedBy    String?
+  orderCount  Int?
+  totalRevenue Int?
+  notes       String?
+}
+
 model PosOrder {
-  id         String    @id @default(cuid())
-  items      String    // JSON: [{id, name, price, qty}]
-  subtotal   Int
-  modifier   String?
-  discount   Int
-  total      Int
-  tender     String    @default("card") // "card" | "cash" | "comp"
-  stripeId   String?   @unique          // null for cash/comp
-  last4      String?
-  cashTendered Int?                     // cents given by customer (cash only)
-  voided     Boolean   @default(false)
-  voidedAt   DateTime?
-  createdAt  DateTime  @default(now())
+  id           String    @id @default(cuid())
+  shiftId      String?
+  items        String    // JSON: [{id, name, price, qty}]
+  subtotal     Int
+  modifier     String?
+  discount     Int
+  total        Int
+  tender       String    @default("card") // "card" | "cash" | "comp"
+  stripeId     String?   @unique          // null for cash/comp
+  last4        String?
+  cashTendered Int?                       // cents given by customer (cash only)
+  voided       Boolean   @default(false)
+  voidedAt     DateTime?
+  createdAt    DateTime  @default(now())
 }
