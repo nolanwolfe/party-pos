@@ -88,12 +88,20 @@ export default function PosOrdersPage() {
         <div className="flex items-center gap-4">
           <a href="/pos" className="text-zinc-500 hover:text-white text-sm transition-colors">← POS</a>
           <h1 className="text-xl font-semibold">Today's Orders</h1>
-          <button
-            onClick={fetchOrders}
-            className="ml-auto text-xs text-zinc-500 hover:text-white border border-zinc-700 px-3 py-1.5 rounded-lg transition-colors"
-          >
-            Refresh
-          </button>
+          <div className="ml-auto flex gap-2">
+            <a
+              href={`/api/pos/export?date=${today}`}
+              className="text-xs text-zinc-500 hover:text-white border border-zinc-700 px-3 py-1.5 rounded-lg transition-colors"
+            >
+              Export CSV
+            </a>
+            <button
+              onClick={fetchOrders}
+              className="text-xs text-zinc-500 hover:text-white border border-zinc-700 px-3 py-1.5 rounded-lg transition-colors"
+            >
+              Refresh
+            </button>
+          </div>
         </div>
 
         {/* Stats */}
