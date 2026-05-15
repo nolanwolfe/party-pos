@@ -8,10 +8,18 @@ export async function PATCH(
   const { id } = await params
   const { pickedUp } = await req.json()
 
-  const order = await prisma.order.update({
-    where: { id },
-    data: { pickedUp },
-  })
+  const [order] = await Promise.all([
+    prisma.order.update({
+      where: { id },
+      data: { pickedUp },
+    }),
+    prisma.pickupLog.create({
+      data: {
+        orderId: id,
+        action: pickedUp ? "checked" : "unchecked",
+      },
+    }),
+  ])
 
   return NextResponse.json(order)
 }

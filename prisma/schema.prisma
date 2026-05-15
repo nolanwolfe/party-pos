@@ -7,13 +7,36 @@ datasource db {
 }
 
 model Order {
+  id         String      @id @default(cuid())
+  name       String
+  email      String
+  package    String
+  amount     Int
+  source     String
+  stripeId   String      @unique
+  last4      String?
+  phone      String?
+  pickedUp   Boolean     @default(false)
+  createdAt  DateTime    @default(now())
+  pickupLogs PickupLog[]
+}
+
+model PickupLog {
   id        String   @id @default(cuid())
-  name      String
-  email     String
-  package   String
-  amount    Int
-  source    String
+  orderId   String
+  order     Order    @relation(fields: [orderId], references: [id])
+  action    String   // "checked" or "unchecked"
+  createdAt DateTime @default(now())
+}
+
+model PosOrder {
+  id        String   @id @default(cuid())
+  items     String   // JSON: [{id, name, price, qty}]
+  subtotal  Int
+  modifier  String?
+  discount  Int
+  total     Int
   stripeId  String   @unique
-  pickedUp  Boolean  @default(false)
+  last4     String?
   createdAt DateTime @default(now())
 }
