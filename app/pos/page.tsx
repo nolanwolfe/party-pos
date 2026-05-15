@@ -14,6 +14,8 @@ import {
   type ModifierKey,
 } from "@/lib/pos-config"
 import { PinDialog } from "@/components/PinDialog"
+import { useOnlineStatus } from "@/lib/use-online"
+import { enqueue } from "@/lib/offline-queue"
 
 type Tab = "bar" | "cuisine"
 type TerminalStatus = "idle" | "connecting" | "ready" | "collecting" | "cancelling" | "processing" | "success" | "error"
@@ -49,6 +51,7 @@ export default function PosPage() {
   const [cashInput, setCashInput] = useState("")
   const [compPinOpen, setCompPinOpen] = useState(false)
 
+  const { online, draining, pendingCount, drainQueue, refreshCount } = useOnlineStatus()
   const terminalRef = useRef<Terminal | null>(null)
   const pendingPiRef = useRef<string | null>(null)
   const collectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -178,6 +181,18 @@ export default function PosPage() {
     setCashModal(false)
     setCashInput("")
 
+    const change = cents - total
+
+    if (!online) {
+      enqueue({ items: cart.map((c) => ({ id: c.item.id, name: c.item.name, price: c.item.price, qty: c.qty })), modifier, tender: "cash", cashTendered: cents, subtotal, discount, total })
+      refreshCount()
+      setStatus("success")
+      setStatusMsg(`Cash queued (offline) — change: ${formatEur(change > 0 ? change : 0)}`)
+      clearCart()
+      setTimeout(() => { setStatus("ready"); setStatusMsg(`Connected · ${readerLabelRef.current}`) }, 4000)
+      return
+    }
+
     const res = await fetch("/api/pos/tender", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -186,7 +201,6 @@ export default function PosPage() {
     const data = await res.json()
     if (!data.ok) { setStatusMsg("Cash tender failed"); return }
 
-    const change = data.change ?? 0
     setStatus("success")
     setStatusMsg(change > 0 ? `Cash — change due: ${formatEur(change)}` : `Cash — exact. Thank you!`)
     clearCart()
@@ -336,6 +350,20 @@ export default function PosPage() {
         </div>
       </header>
 
+      {!online && (
+        <div className="bg-amber-950 border-b border-amber-800 text-amber-300 text-xs px-6 py-2 flex items-center justify-between">
+          <span>Offline — cash/comp will be queued and saved when reconnected</span>
+          {pendingCount > 0 && <span>{pendingCount} queued</span>}
+        </div>
+      )}
+      {online && pendingCount > 0 && (
+        <div className="bg-blue-950 border-b border-blue-800 text-blue-300 text-xs px-6 py-2 flex items-center justify-between">
+          <span>{pendingCount} offline transaction{pendingCount !== 1 ? "s" : ""} pending sync</span>
+          <button onClick={drainQueue} disabled={draining} className="underline disabled:opacity-40">
+            {draining ? "Syncing…" : "Sync now"}
+          </button>
+        </div>
+      )}
       {captureWarning && (
         <div className="bg-red-950 border-b border-red-800 text-red-300 text-xs px-6 py-2">
           {captureWarning}
