@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useRef } from "react"
+import { useEffect, useState, useRef, useCallback } from "react"
 import { loadStripeTerminal, Terminal } from "@stripe/terminal-js"
 import {
   BAR_ITEMS,
@@ -15,18 +15,16 @@ import {
 } from "@/lib/pos-config"
 
 type Tab = "bar" | "cuisine"
-type TerminalStatus = "idle" | "connecting" | "ready" | "collecting" | "processing" | "success" | "error"
+type TerminalStatus = "idle" | "connecting" | "ready" | "collecting" | "cancelling" | "processing" | "success" | "error"
 
 const CART_KEY = "ampav_pos_cart"
 const MODIFIER_KEY = "ampav_pos_modifier"
+// Abandon a collection after 2 minutes with no card tap
+const COLLECT_TIMEOUT_MS = 120_000
 
 function loadPersistedCart(): CartItem[] {
   if (typeof window === "undefined") return []
-  try {
-    return JSON.parse(localStorage.getItem(CART_KEY) ?? "[]")
-  } catch {
-    return []
-  }
+  try { return JSON.parse(localStorage.getItem(CART_KEY) ?? "[]") } catch { return [] }
 }
 
 function loadPersistedModifier(): ModifierKey | null {
@@ -35,22 +33,32 @@ function loadPersistedModifier(): ModifierKey | null {
   return (v as ModifierKey) ?? null
 }
 
+function newIdempotencyKey() {
+  return `pos-${Date.now()}-${Math.random().toString(36).slice(2)}`
+}
+
 export default function PosPage() {
   const [tab, setTab] = useState<Tab>("bar")
   const [cart, setCart] = useState<CartItem[]>([])
   const [modifier, setModifier] = useState<ModifierKey | null>(null)
   const [status, setStatus] = useState<TerminalStatus>("idle")
   const [statusMsg, setStatusMsg] = useState("")
-  const terminalRef = useRef<Terminal | null>(null)
+  const [captureWarning, setCaptureWarning] = useState<string | null>(null)
 
-  // Hydrate from localStorage after mount
+  const terminalRef = useRef<Terminal | null>(null)
+  const pendingPiRef = useRef<string | null>(null)
+  const collectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const readerLabelRef = useRef<string>("S700")
+
   useEffect(() => {
     setCart(loadPersistedCart())
     setModifier(loadPersistedModifier())
     initTerminal()
+    return () => {
+      if (collectTimeoutRef.current) clearTimeout(collectTimeoutRef.current)
+    }
   }, [])
 
-  // Persist cart on change
   useEffect(() => {
     localStorage.setItem(CART_KEY, JSON.stringify(cart))
   }, [cart])
@@ -86,24 +94,53 @@ export default function PosPage() {
         throw new Error("No reader found — make sure the S700 is on.")
       }
 
-      const connectResult = await terminal.connectReader(discoverResult.discoveredReaders[0])
+      const reader = discoverResult.discoveredReaders[0]
+      const connectResult = await terminal.connectReader(reader)
       if ("error" in connectResult) throw new Error(connectResult.error.message)
 
+      readerLabelRef.current = reader.label || "S700"
       terminalRef.current = terminal
       setStatus("ready")
-      setStatusMsg(`Connected · ${discoverResult.discoveredReaders[0].label || "S700"}`)
+      setStatusMsg(`Connected · ${readerLabelRef.current}`)
     } catch (err) {
       setStatus("error")
       setStatusMsg(err instanceof Error ? err.message : "Connection failed")
     }
   }
 
+  async function cancelPendingPi() {
+    const piId = pendingPiRef.current
+    if (!piId) return
+    pendingPiRef.current = null
+    await fetch("/api/pos/cancel", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ paymentIntentId: piId }),
+    }).catch(() => {})
+  }
+
+  const handleCancelCollect = useCallback(async () => {
+    if (!terminalRef.current) return
+    setStatus("cancelling")
+    setStatusMsg("Cancelling…")
+    if (collectTimeoutRef.current) {
+      clearTimeout(collectTimeoutRef.current)
+      collectTimeoutRef.current = null
+    }
+    try {
+      await terminalRef.current.cancelCollectPaymentMethod()
+    } catch {
+      // SDK may throw if already resolved
+    }
+    await cancelPendingPi()
+    setStatus("ready")
+    setStatusMsg(`Connected · ${readerLabelRef.current}`)
+  }, [])
+
   function addToCart(item: MenuItem) {
     setCart((prev) => {
       const existing = prev.find((c) => c.item.id === item.id)
-      if (existing) {
-        return prev.map((c) => c.item.id === item.id ? { ...c, qty: c.qty + 1 } : c)
-      }
+      if (existing) return prev.map((c) => c.item.id === item.id ? { ...c, qty: c.qty + 1 } : c)
       return [...prev, { item, qty: 1 }]
     })
   }
@@ -120,6 +157,7 @@ export default function PosPage() {
   function clearCart() {
     setCart([])
     setModifier(null)
+    setCaptureWarning(null)
   }
 
   function toggleModifier(key: ModifierKey) {
@@ -133,55 +171,96 @@ export default function PosPage() {
   async function handleCharge() {
     if (!canCharge || !terminalRef.current) return
     const terminal = terminalRef.current
+    setCaptureWarning(null)
+
+    const idempotencyKey = newIdempotencyKey()
 
     setStatus("collecting")
     setStatusMsg("Tap or insert card on reader…")
 
+    let piId: string | null = null
+
     try {
       const piRes = await fetch("/api/pos/payment-intent", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": idempotencyKey,
+        },
         body: JSON.stringify({ items: cart, modifier }),
       })
       const piData = await piRes.json()
       if (piData.error) throw new Error(piData.error)
 
-      const { clientSecret, id } = piData
+      piId = piData.id
+      pendingPiRef.current = piId
 
-      const collectResult = await terminal.collectPaymentMethod(clientSecret)
-      if ("error" in collectResult) throw new Error(collectResult.error.message)
+      // Auto-cancel if customer doesn't tap in time
+      collectTimeoutRef.current = setTimeout(() => {
+        setStatusMsg("Timed out — cancelling…")
+        handleCancelCollect()
+      }, COLLECT_TIMEOUT_MS)
+
+      const collectResult = await terminal.collectPaymentMethod(piData.clientSecret)
+
+      if (collectTimeoutRef.current) {
+        clearTimeout(collectTimeoutRef.current)
+        collectTimeoutRef.current = null
+      }
+
+      if ("error" in collectResult) {
+        pendingPiRef.current = null
+        await cancelPendingPi()
+        throw new Error(collectResult.error.message)
+      }
 
       setStatus("processing")
       setStatusMsg("Processing…")
 
       const processResult = await terminal.processPayment(collectResult.paymentIntent)
-      if ("error" in processResult) throw new Error(processResult.error.message)
+      if ("error" in processResult) {
+        await cancelPendingPi()
+        throw new Error(processResult.error.message)
+      }
 
-      await fetch("/api/pos/capture", {
+      // PI is captured on Stripe side — network failure here means we succeeded but didn't log it
+      const captureRes = await fetch("/api/pos/capture", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ paymentIntentId: id }),
+        body: JSON.stringify({ paymentIntentId: piId }),
       })
+
+      pendingPiRef.current = null
+
+      if (!captureRes.ok) {
+        // Payment went through but we failed to save — alert staff
+        setCaptureWarning(`Payment captured (${piId}) but not logged. Note this ID for reconciliation.`)
+      }
 
       setStatus("success")
       setStatusMsg(`Paid ${formatEur(total)} — thank you!`)
       clearCart()
       setTimeout(() => {
         setStatus("ready")
-        setStatusMsg(`Connected · ${terminalRef.current ? "S700" : "reader"}`)
+        setStatusMsg(`Connected · ${readerLabelRef.current}`)
       }, 3500)
     } catch (err) {
+      if (collectTimeoutRef.current) {
+        clearTimeout(collectTimeoutRef.current)
+        collectTimeoutRef.current = null
+      }
+      const msg = err instanceof Error ? err.message : "Payment failed"
       setStatus("error")
-      setStatusMsg(err instanceof Error ? err.message : "Payment failed")
+      setStatusMsg(msg)
       setTimeout(() => {
         setStatus("ready")
-        setStatusMsg("Ready")
+        setStatusMsg(`Connected · ${readerLabelRef.current}`)
       }, 4000)
     }
   }
 
   const menuItems = tab === "bar" ? BAR_ITEMS : CUISINE_ITEMS
-  const busy = status === "collecting" || status === "processing"
+  const busy = status === "collecting" || status === "cancelling" || status === "processing"
 
   return (
     <main className="min-h-screen bg-zinc-950 text-white flex flex-col">
@@ -198,11 +277,18 @@ export default function PosPage() {
           status === "ready" ? "bg-green-950 text-green-400"
           : status === "success" ? "bg-purple-950 text-purple-300"
           : status === "error" ? "bg-red-950 text-red-400"
+          : status === "collecting" ? "bg-yellow-950 text-yellow-300"
           : "bg-zinc-800 text-zinc-400"
         }`}>
           {statusMsg || status}
         </div>
       </header>
+
+      {captureWarning && (
+        <div className="bg-red-950 border-b border-red-800 text-red-300 text-xs px-6 py-2">
+          {captureWarning}
+        </div>
+      )}
 
       <div className="flex flex-1 overflow-hidden">
         {/* Left — Menu */}
@@ -214,9 +300,7 @@ export default function PosPage() {
                 key={t}
                 onClick={() => setTab(t)}
                 className={`flex-1 py-3 text-sm font-medium transition-colors ${
-                  tab === t
-                    ? "text-white border-b-2 border-white"
-                    : "text-zinc-500 hover:text-zinc-300"
+                  tab === t ? "text-white border-b-2 border-white" : "text-zinc-500 hover:text-zinc-300"
                 }`}
               >
                 {t === "bar" ? "Bar Menu" : "Cuisine"}
@@ -281,13 +365,11 @@ export default function PosPage() {
 
           {/* Totals + modifiers + checkout */}
           <div className="border-t border-zinc-800 p-4 space-y-3 shrink-0">
-            {/* Subtotal */}
             <div className="flex justify-between text-sm text-zinc-400">
               <span>Subtotal</span>
               <span>{formatEur(subtotal)}</span>
             </div>
 
-            {/* Modifiers */}
             <div className="space-y-1.5">
               {MODIFIERS.map((m) => (
                 <button
@@ -305,7 +387,6 @@ export default function PosPage() {
               ))}
             </div>
 
-            {/* Discount line */}
             {discount > 0 && (
               <div className="flex justify-between text-sm text-amber-400">
                 <span>Discount</span>
@@ -313,26 +394,33 @@ export default function PosPage() {
               </div>
             )}
 
-            {/* Total */}
             <div className="flex justify-between font-bold text-lg">
               <span>Total</span>
               <span>{formatEur(total)}</span>
             </div>
 
-            {/* Charge */}
-            <button
-              onClick={handleCharge}
-              disabled={!canCharge}
-              className="w-full py-4 rounded-xl font-bold text-lg bg-white text-black hover:bg-zinc-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-            >
-              {busy
-                ? status === "collecting" ? "Waiting for card…" : "Processing…"
-                : status === "success" ? "Done!"
-                : "Charge"}
-            </button>
+            {/* Charge / Cancel */}
+            {status === "collecting" ? (
+              <button
+                onClick={handleCancelCollect}
+                className="w-full py-4 rounded-xl font-bold text-base bg-red-900 text-red-200 hover:bg-red-800 transition-colors"
+              >
+                Cancel Payment
+              </button>
+            ) : (
+              <button
+                onClick={handleCharge}
+                disabled={!canCharge}
+                className="w-full py-4 rounded-xl font-bold text-lg bg-white text-black hover:bg-zinc-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              >
+                {status === "processing" || status === "cancelling"
+                  ? status === "processing" ? "Processing…" : "Cancelling…"
+                  : status === "success" ? "Done!"
+                  : "Charge"}
+              </button>
+            )}
 
-            {/* Clear */}
-            {cart.length > 0 && !busy && (
+            {cart.length > 0 && !busy && status !== "success" && (
               <button
                 onClick={clearCart}
                 className="w-full py-2 text-xs text-zinc-600 hover:text-zinc-400 transition-colors"
@@ -341,7 +429,6 @@ export default function PosPage() {
               </button>
             )}
 
-            {/* Reconnect on error */}
             {status === "error" && (
               <button
                 onClick={initTerminal}
