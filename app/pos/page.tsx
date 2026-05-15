@@ -66,6 +66,8 @@ export default function PosPage() {
     }
   }, [])
 
+  const canChargeRef = useRef(false)
+
   useEffect(() => {
     localStorage.setItem(CART_KEY, JSON.stringify(cart))
   }, [cart])
@@ -174,6 +176,20 @@ export default function PosPage() {
   const subtotal = cartSubtotal(cart)
   const { discount, total } = applyModifier(subtotal, modifier)
   const canCharge = status === "ready" && cart.length > 0 && total >= 50
+  canChargeRef.current = canCharge
+
+  // Keyboard shortcuts (declared after canCharge)
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
+      if (e.key === "b" || e.key === "B") setTab("bar")
+      if (e.key === "c" || e.key === "C") setTab("cuisine")
+      if (e.key === "Escape") { setCashModal(false); setCompPinOpen(false) }
+      if (e.key === "Enter" && canChargeRef.current) handleCharge()
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [])
 
   async function handleCashTender() {
     const cents = Math.round(parseFloat(cashInput) * 100)
@@ -384,6 +400,7 @@ export default function PosPage() {
                 }`}
               >
                 {t === "bar" ? "Bar Menu" : "Cuisine"}
+                <span className="ml-1.5 text-zinc-600 text-xs font-normal">{t === "bar" ? "B" : "C"}</span>
               </button>
             ))}
           </div>
