@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { formatEur } from "@/lib/pos-config"
+import { PinDialog } from "@/components/PinDialog"
 
 type PosOrderRow = {
   id: string
@@ -50,6 +51,7 @@ export default function PosOrdersPage() {
   const [showVoided, setShowVoided] = useState(false)
   const [loading, setLoading] = useState(true)
   const [voidingId, setVoidingId] = useState<string | null>(null)
+  const [pinTarget, setPinTarget] = useState<string | null>(null) // orderId awaiting PIN
 
   const today = new Date().toISOString().slice(0, 10)
 
@@ -65,19 +67,20 @@ export default function PosOrdersPage() {
     fetchOrders()
   }, [])
 
-  async function handleVoid(orderId: string) {
-    if (!confirm("Refund this transaction? This cannot be undone.")) return
+  async function handleVoidWithPin(pin: string) {
+    if (!pinTarget) return
+    const orderId = pinTarget
     setVoidingId(orderId)
-    try {
-      await fetch("/api/pos/orders/refund", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ orderId }),
-      })
-      await fetchOrders()
-    } finally {
-      setVoidingId(null)
-    }
+    setPinTarget(null)
+    const res = await fetch("/api/pos/orders/refund", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ orderId, pin }),
+    })
+    const data = await res.json()
+    setVoidingId(null)
+    if (!res.ok) throw new Error(data.error ?? "Void failed")
+    await fetchOrders()
   }
 
   const displayed = data?.orders.filter((o) => showVoided || !o.voided) ?? []
@@ -187,7 +190,7 @@ export default function PosOrdersPage() {
                     )}
                     {!order.voided && (
                       <button
-                        onClick={() => handleVoid(order.id)}
+                        onClick={() => setPinTarget(order.id)}
                         disabled={voidingId === order.id}
                         className="mt-2 text-xs text-red-500 hover:text-red-300 transition-colors disabled:opacity-40"
                       >
@@ -201,6 +204,14 @@ export default function PosOrdersPage() {
           </div>
         )}
       </div>
+
+      {pinTarget && (
+        <PinDialog
+          title="Confirm Void — Enter PIN"
+          onConfirm={handleVoidWithPin}
+          onCancel={() => setPinTarget(null)}
+        />
+      )}
     </main>
   )
 }

@@ -29,6 +29,14 @@ model PickupLog {
   createdAt DateTime @default(now())
 }
 
+model PosAuditLog {
+  id        String   @id @default(cuid())
+  action    String   // "void", "comp", "shift_open", "shift_close"
+  actor     String   // PIN label / "staff"
+  detail    String?  // JSON context (orderId, amount, etc.)
+  createdAt DateTime @default(now())
+}
+
 model PosShift {
   id          String    @id @default(cuid())
   openedAt    DateTime  @default(now())

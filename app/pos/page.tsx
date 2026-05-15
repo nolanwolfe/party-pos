@@ -13,6 +13,7 @@ import {
   type CartItem,
   type ModifierKey,
 } from "@/lib/pos-config"
+import { PinDialog } from "@/components/PinDialog"
 
 type Tab = "bar" | "cuisine"
 type TerminalStatus = "idle" | "connecting" | "ready" | "collecting" | "cancelling" | "processing" | "success" | "error"
@@ -46,6 +47,7 @@ export default function PosPage() {
   const [captureWarning, setCaptureWarning] = useState<string | null>(null)
   const [cashModal, setCashModal] = useState(false)
   const [cashInput, setCashInput] = useState("")
+  const [compPinOpen, setCompPinOpen] = useState(false)
 
   const terminalRef = useRef<Terminal | null>(null)
   const pendingPiRef = useRef<string | null>(null)
@@ -191,16 +193,25 @@ export default function PosPage() {
     setTimeout(() => { setStatus("ready"); setStatusMsg(`Connected · ${readerLabelRef.current}`) }, 4000)
   }
 
-  async function handleCompTender() {
-    if (!confirm("Mark this order as complimentary (no charge)?")) return
+  async function handleCompTenderWithPin(pin: string) {
+    // Verify PIN server-side, then record comp
+    const verifyRes = await fetch("/api/pos/pin-verify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pin, action: "comp", detail: { total } }),
+    })
+    const verifyData = await verifyRes.json()
+    if (!verifyData.ok) throw new Error(verifyData.error ?? "Invalid PIN")
+
     const res = await fetch("/api/pos/tender", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ items: cart, modifier, tender: "comp" }),
     })
     const data = await res.json()
-    if (!data.ok) { setStatusMsg("Comp tender failed"); return }
+    if (!data.ok) throw new Error("Comp tender failed")
 
+    setCompPinOpen(false)
     setStatus("success")
     setStatusMsg("Comp recorded — enjoy!")
     clearCart()
@@ -471,7 +482,7 @@ export default function PosPage() {
                   Cash
                 </button>
                 <button
-                  onClick={handleCompTender}
+                  onClick={() => setCompPinOpen(true)}
                   className="flex-1 py-2 rounded-lg border border-zinc-600 text-zinc-400 hover:text-white hover:border-zinc-400 text-sm transition-colors"
                 >
                   Comp
@@ -499,6 +510,14 @@ export default function PosPage() {
           </div>
         </div>
       </div>
+
+      {compPinOpen && (
+        <PinDialog
+          title="Comp — Enter PIN"
+          onConfirm={handleCompTenderWithPin}
+          onCancel={() => setCompPinOpen(false)}
+        />
+      )}
 
       {/* Cash tender modal */}
       {cashModal && (
