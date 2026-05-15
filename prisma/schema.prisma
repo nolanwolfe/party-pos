@@ -30,13 +30,15 @@ model PickupLog {
 }
 
 model PosOrder {
-  id        String   @id @default(cuid())
-  items     String   // JSON: [{id, name, price, qty}]
-  subtotal  Int
-  modifier  String?
-  discount  Int
-  total     Int
-  stripeId  String   @unique
-  last4     String?
-  createdAt DateTime @default(now())
+  id         String    @id @default(cuid())
+  items      String    // JSON: [{id, name, price, qty}]
+  subtotal   Int
+  modifier   String?
+  discount   Int
+  total      Int
+  stripeId   String    @unique
+  last4      String?
+  voided     Boolean   @default(false)
+  voidedAt   DateTime?
+  createdAt  DateTime  @default(now())
 }

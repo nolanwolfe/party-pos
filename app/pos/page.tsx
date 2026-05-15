@@ -189,7 +189,10 @@ export default function PosPage() {
       <header className="flex items-center justify-between px-6 py-3 border-b border-zinc-800 shrink-0">
         <div>
           <h1 className="text-lg font-semibold tracking-wide">American Pavilion</h1>
-          <p className="text-zinc-500 text-xs">Point of Sale · Cannes 2026</p>
+          <p className="text-zinc-500 text-xs">
+            Point of Sale · Cannes 2026 ·{" "}
+            <a href="/pos/orders" className="hover:text-white transition-colors">Orders</a>
+          </p>
         </div>
         <div className={`text-xs px-3 py-1.5 rounded-full font-medium ${
           status === "ready" ? "bg-green-950 text-green-400"
