@@ -16,6 +16,7 @@ export async function POST(req: NextRequest) {
       modifier: pi.metadata.modifier || null,
       discount: parseInt(pi.metadata.discount ?? "0"),
       total: pi.amount,
+      tender: "card",
       stripeId: pi.id,
       last4,
     },

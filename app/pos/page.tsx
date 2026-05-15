@@ -44,6 +44,8 @@ export default function PosPage() {
   const [status, setStatus] = useState<TerminalStatus>("idle")
   const [statusMsg, setStatusMsg] = useState("")
   const [captureWarning, setCaptureWarning] = useState<string | null>(null)
+  const [cashModal, setCashModal] = useState(false)
+  const [cashInput, setCashInput] = useState("")
 
   const terminalRef = useRef<Terminal | null>(null)
   const pendingPiRef = useRef<string | null>(null)
@@ -167,6 +169,43 @@ export default function PosPage() {
   const subtotal = cartSubtotal(cart)
   const { discount, total } = applyModifier(subtotal, modifier)
   const canCharge = status === "ready" && cart.length > 0 && total >= 50
+
+  async function handleCashTender() {
+    const cents = Math.round(parseFloat(cashInput) * 100)
+    if (isNaN(cents) || cents < 0) return
+    setCashModal(false)
+    setCashInput("")
+
+    const res = await fetch("/api/pos/tender", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ items: cart, modifier, tender: "cash", cashTendered: cents }),
+    })
+    const data = await res.json()
+    if (!data.ok) { setStatusMsg("Cash tender failed"); return }
+
+    const change = data.change ?? 0
+    setStatus("success")
+    setStatusMsg(change > 0 ? `Cash — change due: ${formatEur(change)}` : `Cash — exact. Thank you!`)
+    clearCart()
+    setTimeout(() => { setStatus("ready"); setStatusMsg(`Connected · ${readerLabelRef.current}`) }, 4000)
+  }
+
+  async function handleCompTender() {
+    if (!confirm("Mark this order as complimentary (no charge)?")) return
+    const res = await fetch("/api/pos/tender", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ items: cart, modifier, tender: "comp" }),
+    })
+    const data = await res.json()
+    if (!data.ok) { setStatusMsg("Comp tender failed"); return }
+
+    setStatus("success")
+    setStatusMsg("Comp recorded — enjoy!")
+    clearCart()
+    setTimeout(() => { setStatus("ready"); setStatusMsg(`Connected · ${readerLabelRef.current}`) }, 3500)
+  }
 
   async function handleCharge() {
     if (!canCharge || !terminalRef.current) return
@@ -420,6 +459,24 @@ export default function PosPage() {
               </button>
             )}
 
+            {/* Cash and Comp tender buttons */}
+            {status === "ready" && cart.length > 0 && (
+              <div className="flex gap-2">
+                <button
+                  onClick={() => { setCashInput(""); setCashModal(true) }}
+                  className="flex-1 py-2 rounded-lg border border-zinc-600 text-zinc-400 hover:text-white hover:border-zinc-400 text-sm transition-colors"
+                >
+                  Cash
+                </button>
+                <button
+                  onClick={handleCompTender}
+                  className="flex-1 py-2 rounded-lg border border-zinc-600 text-zinc-400 hover:text-white hover:border-zinc-400 text-sm transition-colors"
+                >
+                  Comp
+                </button>
+              </div>
+            )}
+
             {cart.length > 0 && !busy && status !== "success" && (
               <button
                 onClick={clearCart}
@@ -440,6 +497,57 @@ export default function PosPage() {
           </div>
         </div>
       </div>
+
+      {/* Cash tender modal */}
+      {cashModal && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="bg-zinc-900 border border-zinc-700 rounded-2xl p-6 w-full max-w-xs space-y-4">
+            <h2 className="font-semibold text-center">Cash Payment</h2>
+            <div className="text-center">
+              <p className="text-zinc-500 text-xs">Total due</p>
+              <p className="text-3xl font-bold">{formatEur(total)}</p>
+            </div>
+            <div className="space-y-1">
+              <p className="text-xs text-zinc-500">Cash received (€)</p>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={cashInput}
+                onChange={(e) => setCashInput(e.target.value)}
+                autoFocus
+                placeholder="0.00"
+                className="w-full bg-zinc-800 text-white text-xl font-mono text-center rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-white"
+              />
+            </div>
+            {cashInput && !isNaN(parseFloat(cashInput)) && (
+              <div className={`text-center text-sm font-medium ${
+                parseFloat(cashInput) * 100 >= total ? "text-green-400" : "text-red-400"
+              }`}>
+                {parseFloat(cashInput) * 100 >= total
+                  ? `Change: ${formatEur(Math.round(parseFloat(cashInput) * 100) - total)}`
+                  : `Short by ${formatEur(total - Math.round(parseFloat(cashInput) * 100))}`
+                }
+              </div>
+            )}
+            <div className="flex gap-2">
+              <button
+                onClick={() => setCashModal(false)}
+                className="flex-1 py-3 rounded-xl border border-zinc-700 text-zinc-400 hover:text-white transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleCashTender}
+                disabled={!cashInput || isNaN(parseFloat(cashInput)) || parseFloat(cashInput) * 100 < total}
+                className="flex-1 py-3 rounded-xl bg-white text-black font-bold hover:bg-zinc-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              >
+                Record
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   )
 }

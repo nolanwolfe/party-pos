@@ -10,8 +10,10 @@ type PosOrderRow = {
   modifier: string | null
   discount: number
   total: number
-  stripeId: string
+  tender: string
+  stripeId: string | null
   last4: string | null
+  cashTendered: number | null
   voided: boolean
   voidedAt: string | null
   createdAt: string
@@ -157,9 +159,18 @@ export default function PosOrdersPage() {
                       )}
                     </div>
                     <p className="text-sm text-zinc-300 truncate">{itemsSummary(order.items)}</p>
-                    {order.last4 && (
-                      <p className="text-xs text-zinc-600 font-mono mt-0.5">•••• {order.last4}</p>
-                    )}
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${
+                        order.tender === "cash" ? "bg-green-950 text-green-400"
+                        : order.tender === "comp" ? "bg-purple-950 text-purple-400"
+                        : "bg-zinc-800 text-zinc-400"
+                      }`}>
+                        {order.tender === "cash" ? "Cash" : order.tender === "comp" ? "Comp" : "Card"}
+                      </span>
+                      {order.last4 && (
+                        <span className="text-xs text-zinc-600 font-mono">•••• {order.last4}</span>
+                      )}
+                    </div>
                   </div>
                   <div className="text-right shrink-0">
                     <p className="font-semibold">{formatEur(order.total)}</p>

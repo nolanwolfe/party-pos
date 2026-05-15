@@ -9,7 +9,9 @@ export async function POST(req: NextRequest) {
   if (!order) return NextResponse.json({ error: "Order not found" }, { status: 404 })
   if (order.voided) return NextResponse.json({ error: "Already voided" }, { status: 409 })
 
-  await stripe.refunds.create({ payment_intent: order.stripeId })
+  if (order.stripeId) {
+    await stripe.refunds.create({ payment_intent: order.stripeId })
+  }
 
   await prisma.posOrder.update({
     where: { id: orderId },

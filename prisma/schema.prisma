@@ -36,8 +36,10 @@ model PosOrder {
   modifier   String?
   discount   Int
   total      Int
-  stripeId   String    @unique
+  tender     String    @default("card") // "card" | "cash" | "comp"
+  stripeId   String?   @unique          // null for cash/comp
   last4      String?
+  cashTendered Int?                     // cents given by customer (cash only)
   voided     Boolean   @default(false)
   voidedAt   DateTime?
   createdAt  DateTime  @default(now())
