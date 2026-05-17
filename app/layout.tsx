@@ -2,9 +2,13 @@ import type { Metadata } from "next"
 import "./globals.css"
 
 export const metadata: Metadata = {
-  title: "Queer Night — Drink Tickets",
+  title: "Queer Night — Fulfillment Dashboard",
   description: "American Pavilion, Cannes Film Festival",
-  icons: { icon: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🍸</text></svg>" },
+  openGraph: {
+    title: "Queer Night — Fulfillment Dashboard",
+    description: "American Pavilion, Cannes Film Festival",
+    images: [{ url: "https://party.timaeus.ai/queernight-banner.jpg", width: 800, height: 300 }],
+  },
 }
 
 export default function RootLayout({

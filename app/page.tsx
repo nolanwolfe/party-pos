@@ -30,6 +30,8 @@ export default function Dashboard() {
 
   useEffect(() => {
     fetchOrders()
+    const interval = setInterval(fetchOrders, 30000)
+    return () => clearInterval(interval)
   }, [filter])
 
   async function fetchOrders() {
@@ -68,6 +70,7 @@ export default function Dashboard() {
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
+            <p className="text-zinc-500 text-xs uppercase tracking-widest">Queer Night 2026</p>
             <h1 className="text-2xl font-bold">Queer Night</h1>
             <div className="flex items-center gap-3 mt-1">
               <p className="text-zinc-400 text-sm">Fulfillment Dashboard</p>
@@ -139,48 +142,19 @@ export default function Dashboard() {
             <table className="w-full text-sm">
               <thead className="bg-zinc-900 text-zinc-400 text-xs uppercase tracking-wide">
                 <tr>
-                  <th className="px-4 py-3 text-left">Time</th>
-                  <th className="px-4 py-3 text-left">Source</th>
-                  <th className="px-4 py-3 text-left">Package</th>
-                  <th className="px-4 py-3 text-left">Amount</th>
-                  <th className="px-4 py-3 text-left">Card</th>
-                  <th className="px-4 py-3 text-left">Email</th>
-                  <th className="px-4 py-3 text-left">Name</th>
+                  <th className="px-4 py-3 text-center">Pick Up</th>
+                  <th className="px-4 py-3 text-left whitespace-nowrap">Name</th>
                   <th className="px-4 py-3 text-center">Tickets</th>
-                  <th className="px-4 py-3 text-center">Picked Up</th>
+                  <th className="px-4 py-3 text-left">Card</th>
+                  <th className="px-4 py-3 text-left">Amount</th>
+                  <th className="px-4 py-3 text-left">Package</th>
+                  <th className="px-4 py-3 text-left">Source</th>
+                  <th className="px-4 py-3 text-left">Time</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-800">
                 {filtered.map((order) => (
                   <tr key={order.id} className={`transition-colors ${order.pickedUp ? "opacity-40" : "hover:bg-zinc-900"}`}>
-                    <td className="px-4 py-3 text-zinc-400 text-xs">
-                      {new Date(order.createdAt).toLocaleString("en-US", {
-                        month: "short", day: "numeric", hour: "numeric", minute: "2-digit"
-                      })}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                        order.source === "presale"
-                          ? "bg-blue-950 text-blue-300"
-                          : "bg-green-950 text-green-300"
-                      }`}>
-                        {order.source === "presale" ? "Presale" : "Day-of"}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      {PACKAGES[order.package as PackageKey]?.label ?? order.package}
-                    </td>
-                    <td className="px-4 py-3">${(order.amount / 100).toFixed(0)}</td>
-                    <td className="px-4 py-3 text-zinc-400 font-mono">
-                      {order.last4 ? <>•••• {order.last4}</> : "—"}
-                    </td>
-                    <td className="px-4 py-3 text-zinc-400">{order.email || "—"}</td>
-                    <td className="px-4 py-3 font-medium">{order.name}</td>
-                    <td className="px-4 py-3 text-center">
-                      <span className="inline-block bg-purple-900 text-purple-200 font-bold rounded-lg px-3 py-0.5 text-sm">
-                        {(PACKAGES[order.package as PackageKey]?.drinks ?? 1) * Math.round(order.amount / (PACKAGES[order.package as PackageKey]?.price ?? order.amount))}
-                      </span>
-                    </td>
                     <td className="px-4 py-3 text-center">
                       <input
                         type="checkbox"
@@ -188,6 +162,33 @@ export default function Dashboard() {
                         onChange={() => togglePickup(order)}
                         className="w-5 h-5 cursor-pointer accent-purple-500"
                       />
+                    </td>
+                    <td className="px-4 py-3 font-medium max-w-[8rem] truncate">{order.name}</td>
+                    <td className="px-4 py-3 text-center">
+                      <span className="inline-block bg-purple-900 text-purple-200 font-bold rounded-lg px-3 py-0.5 text-sm">
+                        {(PACKAGES[order.package as PackageKey]?.drinks ?? 1) * Math.round(order.amount / (PACKAGES[order.package as PackageKey]?.price ?? order.amount))}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-zinc-400 font-mono">
+                      {order.last4 ? <>•••• {order.last4}</> : "—"}
+                    </td>
+                    <td className="px-4 py-3">€{(order.amount / 100).toFixed(0)}</td>
+                    <td className="px-4 py-3">
+                      {PACKAGES[order.package as PackageKey]?.label ?? order.package}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                        order.source === "presale"
+                          ? "bg-blue-950 text-blue-300"
+                          : "bg-green-950 text-green-300"
+                      }`}>
+                        {order.source === "presale" ? "Pre-Sale" : "Day-of"}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-zinc-400 text-xs">
+                      {new Date(order.createdAt).toLocaleString("en-US", {
+                        month: "short", day: "numeric", hour: "numeric", minute: "2-digit"
+                      })}
                     </td>
                   </tr>
                 ))}
