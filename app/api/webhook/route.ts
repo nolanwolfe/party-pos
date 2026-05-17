@@ -9,13 +9,12 @@ async function getCardDetails(paymentIntentId: string | null): Promise<{ last4: 
   try {
     const pi = await stripe.paymentIntents.retrieve(paymentIntentId, {
       expand: ["latest_charge"],
-    })
-    const charge = pi.latest_charge as Stripe.Charge | null
-    const cpd = charge?.payment_method_details?.card_present
-    return {
-      last4:    cpd?.last4    ?? null,
-      cardName: cpd?.cardholder_name ?? null,
-    }
+    }) as Stripe.PaymentIntent & { latest_charge?: Stripe.Charge | null }
+    const charge = pi.latest_charge ?? null
+    const pmd = charge?.payment_method_details
+    const last4 = pmd?.card_present?.last4 ?? pmd?.card?.last4 ?? null
+    const cardName = pmd?.card_present?.cardholder_name ?? null
+    return { last4, cardName }
   } catch {
     return { last4: null, cardName: null }
   }
@@ -90,7 +89,7 @@ export async function POST(req: NextRequest) {
       update: {},
       create: {
         stripeId: pi.id,
-        name: cardName ?? pi.metadata?.name ?? "Walk-in",
+        name: pi.metadata?.name || cardName || "Walk-in",
         email: pi.metadata?.email ?? "",
         package: pi.metadata?.package ?? "unknown",
         amount: pi.amount,
