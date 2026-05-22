@@ -27,6 +27,24 @@ export default function Dashboard() {
   const [filter, setFilter] = useState("all")
   const [search, setSearch] = useState("")
   const [loading, setLoading] = useState(true)
+  const [alpha, setAlpha] = useState(false)
+  const [receiptOrder, setReceiptOrder] = useState<Order | null>(null)
+  const [receiptEmail, setReceiptEmail] = useState("")
+  const [receiptSending, setReceiptSending] = useState(false)
+  const [receiptDone, setReceiptDone] = useState(false)
+
+  async function sendReceipt() {
+    if (!receiptOrder || !receiptEmail) return
+    setReceiptSending(true)
+    await fetch("/api/orders/receipt", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ orderId: receiptOrder.id, email: receiptEmail }),
+    })
+    setReceiptSending(false)
+    setReceiptDone(true)
+    setTimeout(() => { setReceiptOrder(null); setReceiptDone(false) }, 1500)
+  }
 
   useEffect(() => {
     fetchOrders()
@@ -53,15 +71,18 @@ export default function Dashboard() {
   }
 
   const q = search.trim().toLowerCase()
-  const filtered = orders.filter((o) =>
-    q === "" ? true :
-      o.name.toLowerCase().includes(q) ||
-      o.email.toLowerCase().includes(q) ||
-      (o.last4 ?? "").includes(q)
-  )
+  const filtered = orders
+    .filter((o) =>
+      q === "" ? true :
+        o.name.toLowerCase().includes(q) ||
+        o.email.toLowerCase().includes(q) ||
+        (o.last4 ?? "").includes(q)
+    )
+    .sort((a, b) => alpha ? a.name.localeCompare(b.name) : 0)
 
-  const totalRevenue = orders.reduce((sum, o) => sum + o.amount, 0)
-  const pickedUp = orders.filter((o) => o.pickedUp).length
+  const totalRevenue = orders.filter((o) => o.source !== "test").reduce((sum, o) => sum + o.amount, 0)
+  const realOrders = orders.filter((o) => o.source !== "test")
+  const pickedUp = realOrders.filter((o) => o.pickedUp).length
 
   return (
     <main className="min-h-screen bg-zinc-950 text-white">
@@ -94,15 +115,15 @@ export default function Dashboard() {
         <div className="grid grid-cols-3 gap-3">
           <div className="bg-zinc-900 rounded-xl p-4">
             <p className="text-zinc-400 text-xs">Orders</p>
-            <p className="text-2xl font-bold">{orders.length}</p>
+            <p className="text-2xl font-bold">{realOrders.length}</p>
           </div>
           <div className="bg-zinc-900 rounded-xl p-4">
             <p className="text-zinc-400 text-xs">Revenue</p>
-            <p className="text-2xl font-bold">${(totalRevenue / 100).toFixed(0)}</p>
+            <p className="text-2xl font-bold">€{(totalRevenue / 100).toFixed(0)}</p>
           </div>
           <div className="bg-zinc-900 rounded-xl p-4">
             <p className="text-zinc-400 text-xs">Picked Up</p>
-            <p className="text-2xl font-bold">{pickedUp}/{orders.length}</p>
+            <p className="text-2xl font-bold">{pickedUp}/{realOrders.length}</p>
           </div>
         </div>
 
@@ -123,13 +144,23 @@ export default function Dashboard() {
               </button>
             ))}
           </div>
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by name, email, or card…"
-            className="sm:ml-auto bg-zinc-800 rounded-lg px-4 py-1.5 text-sm placeholder-zinc-500 outline-none focus:ring-2 focus:ring-purple-500 w-full sm:w-80"
-          />
+          <div className="sm:ml-auto flex gap-2">
+            <button
+              onClick={() => setAlpha((a) => !a)}
+              className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                alpha ? "bg-purple-600 text-white" : "bg-zinc-800 text-zinc-400 hover:text-white"
+              }`}
+            >
+              A→Z
+            </button>
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search by name, email, or card…"
+              className="bg-zinc-800 rounded-lg px-4 py-1.5 text-sm placeholder-zinc-500 outline-none focus:ring-2 focus:ring-purple-500 w-full sm:w-80"
+            />
+          </div>
         </div>
 
         {/* Table */}
@@ -150,6 +181,7 @@ export default function Dashboard() {
                   <th className="px-4 py-3 text-left">Package</th>
                   <th className="px-4 py-3 text-left">Source</th>
                   <th className="px-4 py-3 text-left">Time</th>
+                  <th className="px-4 py-3 text-left">Receipt</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-800">
@@ -172,23 +204,33 @@ export default function Dashboard() {
                     <td className="px-4 py-3 text-zinc-400 font-mono">
                       {order.last4 ? <>•••• {order.last4}</> : "—"}
                     </td>
-                    <td className="px-4 py-3">€{(order.amount / 100).toFixed(0)}</td>
+                    <td className="px-4 py-3">{order.source === "test" ? <span className="text-zinc-600">€0</span> : <>€{(order.amount / 100).toFixed(0)}</>}</td>
                     <td className="px-4 py-3">
                       {PACKAGES[order.package as PackageKey]?.label ?? order.package}
                     </td>
                     <td className="px-4 py-3">
                       <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                        order.source === "presale"
+                        order.source === "test"
+                          ? "bg-zinc-800 text-zinc-500"
+                          : order.source === "presale"
                           ? "bg-blue-950 text-blue-300"
                           : "bg-green-950 text-green-300"
                       }`}>
-                        {order.source === "presale" ? "Pre-Sale" : "Day-of"}
+                        {order.source === "test" ? "Test" : order.source === "presale" ? "Pre-Sale" : "Day-of"}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-zinc-400 text-xs">
                       {new Date(order.createdAt).toLocaleString("en-US", {
                         month: "short", day: "numeric", hour: "numeric", minute: "2-digit"
                       })}
+                    </td>
+                    <td className="px-4 py-3">
+                      <button
+                        onClick={() => { setReceiptOrder(order); setReceiptEmail(order.email ?? ""); setReceiptDone(false) }}
+                        className="text-xs text-zinc-400 hover:text-white border border-zinc-700 hover:border-zinc-400 px-2 py-1 rounded transition-colors"
+                      >
+                        Send
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -204,6 +246,39 @@ export default function Dashboard() {
         )}
 
       </div>
+
+      {/* Receipt modal */}
+      {receiptOrder && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 px-4" onClick={() => setReceiptOrder(null)}>
+          <div className="bg-zinc-900 border border-zinc-700 rounded-2xl p-6 w-full max-w-sm space-y-4" onClick={(e) => e.stopPropagation()}>
+            <div>
+              <p className="text-xs text-zinc-500 uppercase tracking-widest">Send Receipt</p>
+              <p className="text-lg font-semibold mt-1">{receiptOrder.name}</p>
+              <p className="text-zinc-400 text-sm">{PACKAGES[receiptOrder.package as PackageKey]?.label ?? receiptOrder.package}</p>
+            </div>
+            <input
+              type="email"
+              value={receiptEmail}
+              onChange={(e) => setReceiptEmail(e.target.value)}
+              placeholder="Email address"
+              autoFocus
+              className="w-full bg-zinc-800 rounded-lg px-4 py-2.5 text-sm placeholder-zinc-500 outline-none focus:ring-2 focus:ring-purple-500"
+            />
+            <div className="flex gap-2">
+              <button onClick={() => setReceiptOrder(null)} className="flex-1 px-4 py-2 rounded-lg text-sm bg-zinc-800 text-zinc-400 hover:text-white transition-colors">
+                Cancel
+              </button>
+              <button
+                onClick={sendReceipt}
+                disabled={receiptSending || !receiptEmail}
+                className="flex-1 px-4 py-2 rounded-lg text-sm font-medium bg-purple-600 hover:bg-purple-500 disabled:opacity-50 transition-colors"
+              >
+                {receiptDone ? "Sent ✓" : receiptSending ? "Sending…" : "Send Receipt"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   )
 }

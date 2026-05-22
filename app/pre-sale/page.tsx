@@ -52,7 +52,7 @@ export default function SalesPage() {
         </p>
 
         <div className="text-white/70 text-sm space-y-1">
-          <p><span className="font-semibold text-white">1x Ticket</span> = Soft Drinks, Beer, &amp; Wine</p>
+          <p><span className="font-semibold text-white">1x Ticket</span> = Soft Drinks, Beer, and Wine</p>
           <p><span className="font-semibold text-white">2x Tickets</span> = Mixed Drinks</p>
         </div>
 

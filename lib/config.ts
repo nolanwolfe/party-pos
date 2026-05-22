@@ -24,5 +24,5 @@ export const PAYMENT_LINK_PACKAGES: Record<string, string> = {
 export type PackageKey = keyof typeof PACKAGES
 
 export const EVENT_NAME = "QUEER NIGHT"
-export const EVENT_DATE = "Monday, May 19"
+export const EVENT_DATE = "Monday, May 18"
 export const EVENT_LOCATION = "American Pavilion, Cannes"
